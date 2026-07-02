@@ -2,13 +2,6 @@ streamlit
 python-dotenv
 google-generativeai
 groq
-langchain
-langchain-community
-langchain-huggingface
-langchain-chroma
-chromadb
-pypdf
-sentence-transformers
 pydantic
 reportlab
 Pillow

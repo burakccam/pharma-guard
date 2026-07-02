@@ -3,7 +3,6 @@ import os
 from config import GEMINI_API_KEY
 from agents import run_pharma_guard_analysis
 from utils import save_uploaded_image, create_pdf_report
-from build_rag import build_rag
 
 st.set_page_config(
     page_title="Pharma-Guard AI",
@@ -16,27 +15,20 @@ st.title("💊 Pharma-Guard AI")
 st.subheader("Yapay Zeka Destekli Akıllı İlaç Denetçisi")
 
 st.markdown("""
-> **GÜVENLİK UYARISI:** Bu sistem tıbbi tavsiye vermez. Yalnızca PDF prospektüs kaynaklı bilgi sunar. 
-> Emin olunmayan durumda rapor bloklanır. İlaç kullanımı için **mutlaka doktorunuza veya eczacınıza danışınız.**
+> **GÜVENLİK UYARISI:** Bu sistem tıbbi tavsiye vermez. İlaç bilgileri yapay zeka tarafından sağlanmaktadır. 
+> İlaç kullanımı ve tedaviniz için **mutlaka doktorunuza veya eczacınıza danışınız.**
 """)
 
 # Sidebar
 with st.sidebar:
     st.header("⚙️ Sistem Durumu")
     if GEMINI_API_KEY:
-        st.success("✅ Gemini API: Aktif")
+        st.success("✅ Gemini AI Ajanları: Aktif")
     else:
-        st.error("❌ Gemini API: Bulunamadı (Lütfen .env dosyanızı kontrol edin)")
+        st.error("❌ Gemini API: Bulunamadı!")
         
-    st.header("📚 RAG Veritabanı")
-    st.info("İlk kurulumda veya yeni PDF eklediğinizde veritabanını güncelleyin.")
-    if st.button("🔄 RAG Veritabanını Güncelle"):
-        with st.spinner("PDF'ler işleniyor ve ChromaDB güncelleniyor..."):
-            success = build_rag()
-            if success:
-                st.success("✅ Veritabanı başarıyla güncellendi!")
-            else:
-                st.warning("⚠️ PDF bulunamadı veya işlenemedi.")
+    st.header("🧠 Mimari Bilgisi")
+    st.info("Bu sistem ilaç bilgilerini doğrudan Gemini 1.5 Pro'nun devasa medikal veritabanından saniyeler içinde çeker ve bağlamınıza göre analiz eder. Herhangi bir PDF yüklemenize gerek yoktur.")
 
 # Ana Ekran - Formlar
 col1, col2 = st.columns(2)
@@ -58,9 +50,8 @@ if st.button("🔍 Analiz Et", type="primary", use_container_width=True):
     if not upload_file and not manual_drug:
         st.error("Lütfen bir görsel yükleyin veya ilaç adı girin.")
     elif not GEMINI_API_KEY:
-        st.error("API Key eksik. Lütfen yapılandırın.")
+        st.error("API Key eksik. Sistem çalışamıyor.")
     else:
-        # Kullanıcı bağlamını metinleştir
         context_parts = [f"Yaş: {user_age}"]
         if is_pregnant:
             context_parts.append("Durum: Hamile veya emziriyor.")
@@ -78,7 +69,7 @@ if st.button("🔍 Analiz Et", type="primary", use_container_width=True):
             image_path = save_uploaded_image(upload_file)
             st.image(image_path, caption="Yüklenen Görsel", width=300)
             
-        with st.spinner("🤖 Pharma-Guard Ajanları devrede... Lütfen bekleyin."):
+        with st.spinner("🤖 Pharma-Guard Ajanları bilgileri çekiyor ve analiz ediyor... Lütfen bekleyin."):
             results = run_pharma_guard_analysis(
                 image_file_path=image_path,
                 manual_drug_name=manual_drug,
@@ -86,7 +77,7 @@ if st.button("🔍 Analiz Et", type="primary", use_container_width=True):
             )
             
         if results["status"] == "BLOCKED" or results["status"] == "ERROR":
-            st.error(f"🚨 RAPOR BLOKLANDI VEYA HATA OLUŞTU")
+            st.error(f"🚨 RAPOR OLUŞTURULAMADI")
             st.warning(f"Sebep: {results.get('block_reason') or results.get('vision_result', {}).get('notes')}")
         else:
             st.success("✅ Analiz Tamamlandı!")
@@ -94,7 +85,6 @@ if st.button("🔍 Analiz Et", type="primary", use_container_width=True):
             st.markdown("---")
             st.markdown(results["final_markdown_report"])
             
-            # PDF Üret ve İndir
             pdf_name = f"report_{manual_drug or 'ilac'}.pdf".replace(" ", "_")
             pdf_path = create_pdf_report(results["final_markdown_report"], pdf_name)
             

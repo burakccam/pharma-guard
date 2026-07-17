@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-from config import GEMINI_API_KEY
+from config import GROQ_API_KEY
 from agents import run_pharma_guard_analysis
 from utils import save_uploaded_image, create_pdf_report
 
@@ -22,13 +22,13 @@ st.markdown("""
 # Sidebar
 with st.sidebar:
     st.header("⚙️ Sistem Durumu")
-    if GEMINI_API_KEY:
-        st.success("✅ Gemini AI Ajanları: Aktif")
+    if GROQ_API_KEY:
+        st.success("✅ Groq AI Ajanları: Aktif")
     else:
-        st.error("❌ Gemini API: Bulunamadı!")
+        st.error("❌ Groq API: Bulunamadı!")
         
     st.header("🧠 Mimari Bilgisi")
-    st.info("Bu sistem ilaç bilgilerini doğrudan Gemini 1.5 Pro'nun devasa medikal veritabanından saniyeler içinde çeker ve bağlamınıza göre analiz eder. Herhangi bir PDF yüklemenize gerek yoktur.")
+    st.info("Bu sistem ilaç bilgilerini Llama 3 medikal veritabanından saniyeler içinde çeker ve bağlamınıza göre analiz eder. Herhangi bir PDF yüklemenize gerek yoktur.")
 
 # Ana Ekran - Formlar
 col1, col2 = st.columns(2)
@@ -49,7 +49,7 @@ with col2:
 if st.button("🔍 Analiz Et", type="primary", use_container_width=True):
     if not upload_file and not manual_drug:
         st.error("Lütfen bir görsel yükleyin veya ilaç adı girin.")
-    elif not GEMINI_API_KEY:
+    elif not GROQ_API_KEY:
         st.error("API Key eksik. Sistem çalışamıyor.")
     else:
         context_parts = [f"Yaş: {user_age}"]

@@ -1,75 +1,105 @@
 import os
 import json
-import google.generativeai as genai
-import PIL.Image
-from config import GEMINI_API_KEY
+import base64
+from groq import Groq
+from config import GROQ_API_KEY
 from utils import safe_json_parse
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# Initialize Groq client
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 MASTER_PROMPT = """
 ROLE: PHARMA-GUARD MASTER ORCHESTRATOR
-Sen Gemini tabanlı, multimodal yeteneklere sahip ve çoklu ajan ekosistemini yöneten baş mimarsın.
+Sen Groq tabanlı (Llama 3), multimodal yeteneklere sahip ve çoklu ajan ekosistemini yöneten baş mimarsın.
 Görevin; görsel veya metinsel girişi alınan bir ilacı sıfır hata toleransı ile analiz etmektir.
-KURAL 1: Yazı okunmuyorsa asla tahmin etme. Kullanıcıyı daha net, ışıklı ve düz açıdan fotoğraf çekmesi için uyar.
+KURAL 1: Yazı okunmuyorsa asla tahmin etme.
 KURAL 2: Tıbbi bilgileri kendi medikal bilgi dağarcığından en güncel, resmi prospektüslere dayanarak çıkar.
 KURAL 3: Bu sistem tıbbi tavsiye vermez. Kullanıcıyı her zaman doktor veya eczacıya yönlendir.
 MİSYON: Sonuçta çıkacak rapor bir insanın sağlık kararını etkileyebilir. Bu yüzden doğruluk hızdan önemlidir.
 """
 
+def get_groq_response(prompt, model="llama-3.3-70b-versatile", is_json=False):
+    if not client:
+        return "API Hatası: Groq API Anahtarı eksik."
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        return f"Bilgi alınamadı: {e}"
+
+def get_groq_vision_response(image_path, prompt, model="llama-3.2-11b-vision-preview"):
+    if not client:
+        return "API Hatası: Groq API Anahtarı eksik."
+    try:
+        with open(image_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+            
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                            },
+                        },
+                    ],
+                }
+            ],
+            temperature=0.1,
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+         return f"Bilgi alınamadı: {e}"
+
 class VisionScanner:
     @staticmethod
     def analyze_image(image_path):
-        if not GEMINI_API_KEY:
-            return {"status": "ERROR", "notes": "Gemini API anahtarı bulunamadı."}
-        try:
-            img = PIL.Image.open(image_path)
-            model = genai.GenerativeModel('gemini-1.5-pro')
-            prompt = """
-            Aşağıdaki ilaç kutusu veya prospektüs görselini incele.
-            Kesin bir JSON formatında şu bilgileri dön. Eğer okunamıyorsa boş bırak ve status'u NEED_BETTER_IMAGE yap.
-            Şema:
-            {
-                "status": "OK | NEED_BETTER_IMAGE | ERROR",
-                "brand_name": "İlaç Adı",
-                "active_ingredient": "Etken Madde",
-                "dosage": "Dozaj (örn 500 mg)",
-                "form": "Form (Tablet, vb.)",
-                "confidence": 0-10 arası güven puanı,
-                "notes": "Ek notlar"
-            }
-            """
-            response = model.generate_content([prompt, img])
-            result = safe_json_parse(response.text)
-            if not result:
-                return {"status": "ERROR", "notes": "JSON formatı çözümlenemedi."}
-            return result
-        except Exception as e:
-            return {"status": "ERROR", "notes": str(e)}
+        if not client:
+            return {"status": "ERROR", "notes": "Groq API anahtarı bulunamadı."}
+        prompt = """
+        Aşağıdaki ilaç kutusu veya prospektüs görselini incele.
+        Kesin bir JSON formatında şu bilgileri dön. Eğer okunamıyorsa boş bırak ve status'u NEED_BETTER_IMAGE yap.
+        Şema:
+        {
+            "status": "OK | NEED_BETTER_IMAGE | ERROR",
+            "brand_name": "İlaç Adı",
+            "active_ingredient": "Etken Madde",
+            "dosage": "Dozaj (örn 500 mg)",
+            "form": "Form (Tablet, vb.)",
+            "confidence": 0-10 arası güven puanı,
+            "notes": "Ek notlar"
+        }
+        """
+        response_text = get_groq_vision_response(image_path, prompt)
+        result = safe_json_parse(response_text)
+        if not result:
+            return {"status": "ERROR", "notes": "JSON formatı çözümlenemedi veya görsel anlaşılamadı."}
+        return result
 
 class KnowledgeSpecialist:
     @staticmethod
     def fetch_drug_info(query):
-        if not GEMINI_API_KEY:
-            return "API Hatası: Gemini API Anahtarı eksik."
-        try:
-            model = genai.GenerativeModel('gemini-1.5-pro')
-            prompt = f"""
-            Lütfen uzman bir farmakolog gibi davranarak "{query}" ilacının Türkiye'deki güncel Sağlık Bakanlığı onaylı prospektüs (kullanma talimatı) bilgilerini detaylıca listele.
-            
-            Şu başlıkları kesinlikle içermeli:
-            - Endikasyonlar (Ne için kullanılır?)
-            - Etkin Madde ve Dozaj
-            - Yan Etkiler
-            - Kontrendikasyonlar (Kimler kullanmamalı)
-            - İlaç Etkileşimleri
-            - Üretici ve Ruhsat Sahibi bilgisi
-            """
-            response = model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            return f"Bilgi alınamadı: {e}"
+        prompt = f"""
+        Lütfen uzman bir farmakolog gibi davranarak "{query}" ilacının Türkiye'deki güncel Sağlık Bakanlığı onaylı prospektüs (kullanma talimatı) bilgilerini detaylıca listele.
+        
+        Şu başlıkları kesinlikle içermeli:
+        - Endikasyonlar (Ne için kullanılır?)
+        - Etkin Madde ve Dozaj
+        - Yan Etkiler
+        - Kontrendikasyonlar (Kimler kullanmamalı)
+        - İlaç Etkileşimleri
+        - Üretici ve Ruhsat Sahibi bilgisi
+        """
+        return get_groq_response(prompt)
 
 class FactChecker:
     @staticmethod
@@ -85,8 +115,6 @@ class FactChecker:
 class SafetyAuditor:
     @staticmethod
     def audit(ai_knowledge, user_context):
-        if not GEMINI_API_KEY:
-             return {"status": "ERROR", "notes": "API Key eksik."}
         prompt = f"""
         {MASTER_PROMPT}
         
@@ -94,7 +122,7 @@ class SafetyAuditor:
         İLAÇ PROSPEKTÜS BİLGİSİ (AI'den gelen):
         {ai_knowledge}
         
-        GÖREV: Kullanıcının girdiği sağlık profiline göre ilacın risklerini değerlendir. Sadece JSON dön:
+        GÖREV: Kullanıcının girdiği sağlık profiline göre ilacın risklerini değerlendir. Sadece saf JSON formatında dön. (```json ... ``` markdown işaretleri olmadan doğrudan json dön):
         {{
             "side_effects": "Yan etkiler",
             "critical_warnings": "Ciddi yan etkiler ve KIRMIZI ALARM niteliğindeki riskler",
@@ -103,19 +131,15 @@ class SafetyAuditor:
             "pregnancy_lactation": "Hamilelik uyarısı"
         }}
         """
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        response = model.generate_content(prompt)
-        return safe_json_parse(response.text) or {}
+        response_text = get_groq_response(prompt)
+        return safe_json_parse(response_text) or {}
 
 class CorporateAnalyst:
     @staticmethod
     def analyze(ai_knowledge):
-        if not GEMINI_API_KEY:
-            return {}
-        prompt = f"Şu metinden üretici ve ruhsat sahibini çıkar. JSON dön: {{\"manufacturer\": \"\", \"license_holder\": \"\"}}.\nMetin: {ai_knowledge}"
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return safe_json_parse(response.text) or {}
+        prompt = f"Şu metinden üretici ve ruhsat sahibini çıkar. Sadece JSON dön: {{\"manufacturer\": \"\", \"license_holder\": \"\"}}.\nMetin: {ai_knowledge}"
+        response_text = get_groq_response(prompt)
+        return safe_json_parse(response_text) or {}
 
 class ReportSynthesizer:
     @staticmethod
